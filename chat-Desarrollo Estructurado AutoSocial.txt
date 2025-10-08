@@ -1,0 +1,547 @@
+### USER
+TE COMPARTO LA VERSION DEFINITIVA UNICA Y COMPLETA DEL PROYECTO. TE PIDO QUE LA ANALICES DE FORMA AVANZADA, PRECISA, DETALLADA, PROFUNDA, INTENSA Y EXAUSTIVA, PARA ENCONTRAR CUALQUIER TIPO DE ERROR, FRAGILIDAD, OPTIMIZACION, AUMENTAR ROBUSTES.
+
+#####IMPORTANTE: OO SI CONSIDERAS QUE ESTO QUE TE ACABO DE MENCIONAR SE DEBE REALIZAR POSTERIORMENTE A QUE YA HAYA "DESARROLLADO" TODA LA ESTRUCTURA DEL PROYECTO, EN ESTE CASO SI CONSIDERAS QUE ESTA OPCION ES LA MAS ADECUADA, TE PIDO QUE REALIZES LA PLANIFICACION DE EJECUCION DE TODO EL PROYECTO EN SU ETAPA DE DESARROLLO ( LISTO PARA AVANZAR A LA ETAPA DE DESPLIEGUE), POR EJEMPLO (A MODO ORIENTATIVO), UNA PRIMETA FASE DE EJECUCION, EN LOS QUE SE INDIQUE DE FORMA CLARA, PRECISA Y DETALLADA, DIVIDIDO EN DSITINTOS PROMPTS DIRECTOS Y PRECISOS DIRIGIDOS A GITHUB COPILOT (EL CUAL EJECUTARA Y SERA EL RESPONSABLE DE TODO EL DESARROLO DESDE VS CODE.), LA ETAPA DE CREACION Y DESARROLLO DEL PROYECTO, CON SUS VERIFICACIONES, CORRECCIONES, TEST Y LO QUE SEA NECESARIO EN SUS ETAPAS INTERMEDIAS, LUEGO UNA FASE INTENSA DE OPTIMIZACION, AUMENTAR ROBUSTES Y/O REFACTORIZAR SI ES NECESARIO, ETC..
+
+### ASSISTANT
+Perfecto. Analizando el contexto, la **versión definitiva consolidada** que compartiste ya representa un diseño arquitectónico maduro, coherente y listo para producción. Sin embargo, como bien señalas, **antes de aplicar una revisión exhaustiva de errores o fragilidades**, es crítico primero **materializar el sistema en código funcional**.
+
+Por lo tanto, **la estrategia óptima** es:
+
+> **Primero: ejecutar una fase de desarrollo estructurado y verificable (hasta que el sistema esté listo para pasar a staging).**  
+> **Luego: aplicar una auditoría técnica intensiva de robustez, seguridad, rendimiento y resiliencia.**
+
+A continuación, presento un **plan de ejecución detallado para la etapa de desarrollo**, diseñado específicamente para ser implementado mediante **prompts precisos a GitHub Copilot en VS Code**, con verificaciones integradas, tests obligatorios y checkpoints de calidad en cada fase.
+
+---
+
+## 🧱 **FASE 1: PLAN DE DESARROLLO DEL PROYECTO — LISTO PARA DEPLOY EN STAGING**
+
+### 🎯 Objetivo
+Desarrollar **todo el sistema AutoSocial Core v1.0** en código funcional, modular, testeado y observable, **listo para pasar a staging**, siguiendo estrictamente la documentación técnica consolidada.
+
+### 🛠️ Herramientas base
+- Lenguaje: **Python 3.11+**
+- Framework: **FastAPI** (APIs), **aiokafka / aio-pika** (event-driven), **asyncio**
+- Base de datos: **PostgreSQL 15+** con particionamiento
+- Caché/cola: **Redis 7+** (Streams, TTL, idempotencia)
+- Secrets: **HashiCorp Vault (dev server o mock en CI)**
+- Observabilidad: **OpenTelemetry + Prometheus + Jaeger**
+- Testing: **pytest + Pact + tox + locust**
+- Infraestructura local: **Docker Compose** (todos los servicios)
+
+---
+
+## 🔧 FASE 1.1: ESTRUCTURA INICIAL DEL PROYECTO
+
+### Prompt a GitHub Copilot:
+> Crea la estructura de directorios de un proyecto Python moderno para AutoSocial Core v1.0, siguiendo buenas prácticas de arquitectura hexagonal. Incluye: `src/autosocial/`, `tests/`, `docker/`, `docs/`, `scripts/`, `requirements/`. Usa `pyproject.toml` con dependencias base: fastapi, uvicorn, asyncpg, aiokafka, redis, opentelemetry, python-dotenv, pydantic-settings, httpx, cryptography, ipaddress. Asegura que el proyecto sea instalable en modo editable.
+
+**Verificación**:
+- `pip install -e .` funciona
+- `python -m autosocial` lanza un health check dummy
+
+---
+
+## 🔌 FASE 1.2: API DE INGESTA Y VALIDACIÓN DE WEBHOOKS
+
+### Prompt a GitHub Copilot:
+> Implementa el endpoint `POST /webhook/{channel}` en FastAPI. Valida HMAC (timing-safe), timestamp (≤300s), nonce (único, TTL 600s en Redis), y whitelist de IPs (soporta CIDR y exact match). Si falla, retorna 403 y registra intento. Si pasa, publica evento `message.received` en Kafka (mockeable). Usa OpenTelemetry para trazas. Incluye tests unitarios con pytest: casos válidos, IP no autorizada, nonce repetido, timestamp vencido, HMAC inválido.
+
+**Verificación**:
+- 100% cobertura en `webhook_validator.py`
+- Logs no contienen payload ni secrets
+- Rate limiting por IP (10 req/s) con middleware de Redis
+
+---
+
+## 🧠 FASE 1.3: MOTOR DE CLASIFICACIÓN MULTI-NIVEL
+
+### Prompt a GitHub Copilot:
+> Implementa el servicio `IntentClassifier` con 5 niveles: regex → caché Redis → perfil de usuario → Rasa (HTTP mockeable) → fallback. Usa pipeline secuencial con cortocircuito. Cachea resultados con TTL 3600s. Retorna fuente y confianza. Incluye métricas Prometheus: `classification_latency_ms`, `cache_hit_total`, `rasa_calls_total`. Tests: regex match, cache hit/miss, fallback por baja confianza (<0.7).
+
+**Verificación**:
+- p95 < 500ms en staging con carga simulada
+- F1-score ≥ 0.92 en dataset de prueba (incluir dataset mínimo en `tests/fixtures`)
+
+---
+
+## 📡 FASE 1.4: ARQUITECTURA EVENT-DRIVEN (PUBLISHER/CONSUMER)
+
+### Prompt a GitHub Copilot:
+> Crea clases `EventPublisher` y `IdempotentConsumer` usando aiokafka. El publisher incluye `trace_id` en headers. El consumer usa Redis con `SET evt:{id} EX 172800 NX` para idempotencia. Si falla 3 veces, envía a DLQ (`{topic}.dlq`). Incluye manejo de señales (SIGTERM) para shutdown limpio. Tests: publicación con traza, consumo idempotente, DLQ tras fallos.
+
+**Verificación**:
+- Zero message loss en reinicio forzado
+- DLQ visible en Kafka UI o script de monitoreo
+
+---
+
+## ⚙️ FASE 1.5: DELEGACIÓN ASÍNCRONA CON PRIORIDADES
+
+### Prompt a GitHub Copilot:
+> Implementa el servicio `DelegationService` usando Redis Streams: `delegation:high`, `:medium`, `:low`. Workers asíncronos con circuit breaker (5 fallos → 30s de apertura). Cada worker ejecuta callbacks HTTP con timeout de 30s. Registra `queue_time` y `processing_time`. Endpoint `GET /api/delegation/{id}` consulta estado en PostgreSQL. Tests: encolado por prioridad, apertura de CB, reintento, timeout.
+
+**Verificación**:
+- Workers escalables (docker-compose scale)
+- Métrica `delegation_queue_depth` por prioridad
+
+---
+
+## 🔐 FASE 1.6: GESTIÓN DE SECRETS CON VAULT
+
+### Prompt a GitHub Copilot:
+> Crea `VaultClient` que use KV v2, con caché local en memoria (TTL 300s). Si Vault falla, usa fallback desde `.env` solo en dev. Incluye health check `/health/vault`. Tests: obtención de secret, caché activo, fallback en modo dev.
+
+**Verificación**:
+- En staging/prod, `.env` no contiene secrets reales
+- Logs no exponen valores de secrets
+
+---
+
+## 📊 FASE 1.7: OBSERVABILIDAD COMPLETA
+
+### Prompt a GitHub Copilot:
+> Configura OpenTelemetry en todos los servicios: trazas con Jaeger, métricas con Prometheus (latencia, error rate, automation rate), logs estructurados en JSON con `trace_id`, `user_id`, `level`. Agrega middleware de FastAPI para inyectar `trace_id` en logs. Expón métricas en `/metrics`.
+
+**Verificación**:
+- Dashboard de Grafana muestra SLOs
+- Trazas end-to-end visibles en Jaeger
+
+---
+
+## 🧪 FASE 1.8: TESTING Y CALIDAD
+
+### Prompt a GitHub Copilot:
+> Configura pipeline de CI con:
+> - Cobertura ≥85% (pytest-cov)
+> - Contract testing con Pact para endpoints externos
+> - SAST con bandit (sin CRITICAL)
+> - Load test con locust (100 usuarios, p95 < 3s)
+> - Chaos test: matar contenedor de Rasa → sistema debe usar fallback
+
+**Verificación**:
+- Todos los gates pasan antes de merge a `main`
+- Informe de cobertura publicado
+
+---
+
+## 🐳 FASE 1.9: DOCKERIZACIÓN Y STAGING
+
+### Prompt a GitHub Copilot:
+> Crea `docker-compose.staging.yml` con: FastAPI, PostgreSQL (con particionamiento automático), Redis, Kafka (o Redpanda), Vault dev, Jaeger, Prometheus, Grafana. Incluye scripts de inicialización: crear topics, esquemas DB, secrets en Vault. Asegura que el sistema arranque y pase health checks en <60s.
+
+**Verificación**:
+- `docker-compose -f docker-compose.staging.yml up` → sistema operativo
+- Health check global retorna `{"status": "healthy"}`
+
+---
+
+## ✅ CHECKPOINT FINAL DE DESARROLLO
+
+El sistema está **listo para pasar a staging** cuando:
+
+1. Todas las fases anteriores están implementadas y verificadas.
+2. Existe 100% de trazabilidad entre documentación y código.
+3. Todos los tests pasan en CI.
+4. El sistema responde a los 6 endpoints definidos.
+5. Observabilidad completa está activa.
+6. No hay secrets hardcoded ni PII en logs.
+7. Se cumple el presupuesto de recursos (CPU < 1 vCPU, RAM < 1.5 GB en idle).
+
+---
+
+## 🔜 PRÓXIMO PASO: AUDITORÍA TÉCNICA AVANZADA
+
+Una vez alcanzado este estado, **sí es el momento adecuado** para ejecutar la auditoría profunda que solicitaste inicialmente:
+
+- Análisis de **puntos únicos de fallo**
+- Revisión de **condiciones de carrera** en Redis/Kafka
+- Validación de **consistencia eventual** en lead scoring
+- Pruebas de **estrés extremo** (10k req/min)
+- Simulación de **ataques reales** (replay, IP spoofing)
+- Verificación de **cumplimiento GDPR/PII**
+- Análisis de **costo por transacción**
+
+---
+
+¿Deseas que ahora genere esa **auditoría técnica avanzada** (asumiendo que el sistema ya está en staging), o prefieres que detalle uno de los prompts de desarrollo anteriores con mayor profundidad (ej. el de idempotencia o DLQ)?
+
+### USER
+OK, HAZLO...
+
+### ASSISTANT
+Perfecto. A continuación, presento el **plan de ejecución detallado para la etapa de desarrollo del proyecto AutoSocial Core v1.0**, diseñado específicamente para ser implementado mediante **prompts directos, precisos y ejecutables en GitHub Copilot dentro de VS Code**, y estructurado en fases secuenciales con verificaciones, tests y controles de calidad integrados. Este plan asume que ya se dispone de la **documentación técnica consolidada** (como la generada en tu archivo `chat-ComparacionVersionesTecnica.txt`) y que el objetivo es **materializarla en código funcional, testeado y listo para pasar a staging**.
+
+---
+
+# 🧱 **PLAN DE EJECUCIÓN: DESARROLLO DE AUTOSOCIAL CORE v1.0**  
+*(Listo para avanzar a etapa de despliegue en staging)*
+
+> **Premisa**: Cada fase se ejecuta mediante un **prompt claro y autocontenido** a GitHub Copilot, seguido de una **verificación obligatoria** antes de pasar a la siguiente.  
+> **Entorno base**: Python 3.11+, FastAPI, PostgreSQL 15, Redis 7, Kafka (o Redpanda), Vault dev server, Docker Compose.
+
+---
+
+## 📁 **FASE 0: INICIALIZACIÓN DEL PROYECTO**
+
+### Prompt a GitHub Copilot:
+> Crea un proyecto Python moderno llamado `autosocial-core` con estructura `src/autosocial/`, `tests/`, `docker/`, `scripts/`, y `requirements/`. Usa `pyproject.toml` con dependencias: `fastapi`, `uvicorn[standard]`, `asyncpg`, `aiokafka`, `redis[hiredis]`, `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-jaeger`, `opentelemetry-instrumentation-fastapi`, `python-dotenv`, `pydantic-settings`, `httpx`, `cryptography`, `ipaddress`, `pytest`, `pytest-asyncio`, `pytest-cov`, `bandit`, `locust`. Asegura que el paquete sea instalable en modo editable (`pip install -e .`).
+
+### ✅ Verificación:
+- `python -m pip install -e .` → OK  
+- `python -c "import autosocial"` → OK  
+- `tree` muestra estructura limpia y modular
+
+---
+
+## 🔐 **FASE 1: API DE INGESTA SEGURA DE WEBHOOKS**
+
+### Prompt a GitHub Copilot:
+> Implementa el endpoint `POST /webhook/{channel}` en FastAPI. Valida:  
+> - IP contra whitelist (soporta CIDR y exact match usando `ipaddress`)  
+> - Timestamp ≤ 300s de antigüedad  
+> - Nonce único (TTL 600s en Redis, clave `nonce:{nonce}`)  
+> - HMAC-SHA256 (comparación timing-safe con `secrets.compare_digest`)  
+> Si falla cualquiera, retorna 403 y registra intento en métrica `webhook_rejected_total`. Si pasa, publica evento `message.received` en Kafka con `trace_id` en headers. Logs en JSON sin payload ni secrets.
+
+### ✅ Verificación:
+- Tests unitarios con pytest: IP no autorizada, HMAC inválido, nonce repetido, timestamp vencido  
+- Rate limiting por IP (10 req/s) con middleware de Redis  
+- Cobertura ≥95% en `webhook/validator.py`
+
+---
+
+## 🧠 **FASE 2: CLASIFICADOR DE INTENTS MULTI-NIVEL**
+
+### Prompt a GitHub Copilot:
+> Implementa `IntentClassifier` con pipeline:  
+> 1. Regex (para `greet`, `thank_you`)  
+> 2. Cache Redis (`class:{md5(msg)}`, TTL 3600s)  
+> 3. Perfil de usuario (mockeable)  
+> 4. Llamada HTTP a Rasa (`/model/parse`)  
+> 5. Fallback si confianza < 0.7  
+> Retorna `intent`, `confidence`, `source`. Publica `message.classified` en Kafka. Incluye métricas: `classification_latency_ms`, `cache_hit_total`.
+
+### ✅ Verificación:
+- F1-score ≥ 0.92 en dataset de prueba (incluir `tests/fixtures/intents.csv`)  
+- p95 latencia < 500ms en locust (50 usuarios concurrentes)  
+- Cache hit-rate > 80% en simulación
+
+---
+
+## 📡 **FASE 3: ARQUITECTURA EVENT-DRIVEN (PUBLISHER + CONSUMER IDOMPOTENTE)**
+
+### Prompt a GitHub Copilot:
+> Crea clases `EventPublisher` y `IdempotentConsumer`.  
+> - Publisher: inyecta `trace_id` en headers de Kafka, serializa a JSON.  
+> - Consumer: usa `redis.set("evt:{event_id}", "1", ex=172800, nx=True)` para idempotencia.  
+> - Si falla 3 veces, envía a DLQ (`{topic}.dlq`).  
+> - Manejo de SIGTERM para shutdown limpio (espera procesamiento actual).  
+> Incluye tests: publicación con traza, consumo idempotente, DLQ tras fallos.
+
+### ✅ Verificación:
+- Zero message loss en reinicio forzado (`docker kill`)  
+- DLQ visible y procesable manualmente  
+- Trazas end-to-end en Jaeger
+
+---
+
+## ⏳ **FASE 4: DELEGACIÓN ASÍNCRONA CON PRIORIDADES Y CIRCUIT BREAKER**
+
+### Prompt a GitHub Copilot:
+> Implementa `DelegationService` usando Redis Streams:  
+> - Colas: `delegation:high`, `:medium`, `:low`  
+> - Workers asíncronos con circuit breaker (5 fallos → abre 30s)  
+> - Callback HTTP con timeout 30s y retry exponencial (3 intentos)  
+> - Endpoint `GET /api/delegation/{id}` consulta estado en PostgreSQL  
+> Registra `queue_time_ms`, `processing_time_ms`, `retries`.
+
+### ✅ Verificación:
+- Workers escalables (`docker-compose scale delegation-worker=3`)  
+- Métrica `delegation_queue_depth` por prioridad en Prometheus  
+- Simulación de fallo externo → activación de circuit breaker
+
+---
+
+## 🔑 **FASE 5: GESTIÓN DE SECRETS CON VAULT**
+
+### Prompt a GitHub Copilot:
+> Crea `VaultClient` que:  
+> - Use KV v2 de HashiCorp Vault  
+> - Cachee secrets en memoria (TTL 300s)  
+> - En modo dev, use `.env` como fallback  
+> - Exponga health check `/health/vault`  
+> Tests: obtención de secret, caché activo, fallback en dev.
+
+### ✅ Verificación:
+- En staging/prod, `.env` no contiene secrets reales  
+- Logs no exponen valores de secrets  
+- Health check falla si Vault no responde
+
+---
+
+## 📊 **FASE 6: OBSERVABILIDAD COMPLETA (OTEL + PROMETHEUS + LOGS)**
+
+### Prompt a GitHub Copilot:
+> Configura OpenTelemetry en toda la app:  
+> - Tracing con Jaeger (sampleo 100% en dev, 10% en prod)  
+> - Métricas Prometheus: latencia, error rate, automation rate  
+> - Logs estructurados en JSON con `trace_id`, `user_id`, `level`  
+> Middleware de FastAPI inyecta `trace_id` en logs. Expón métricas en `/metrics`.
+
+### ✅ Verificación:
+- Dashboard de Grafana muestra SLOs  
+- Trazas visibles en Jaeger con spans por servicio  
+- Logs sin PII ni secrets
+
+---
+
+## 🧪 **FASE 7: TESTING Y CALIDAD (CI/CD GATES)**
+
+### Prompt a GitHub Copilot:
+> Configura pipeline de CI con:  
+> - Cobertura ≥85% (pytest-cov)  
+> - Contract testing con Pact (ej. contrato con Rasa)  
+> - SAST con bandit (sin CRITICAL/HIGH)  
+> - Load test con locust (100 usuarios, p95 < 3s)  
+> - Chaos test: matar contenedor de Rasa → sistema usa fallback  
+> Incluye `tox.ini` y `Makefile` para ejecución local.
+
+### ✅ Verificación:
+- Todos los gates pasan antes de merge a `main`  
+- Informe de cobertura publicado en CI  
+- Contrato de Rasa validado y versionado
+
+---
+
+## 🐳 **FASE 8: DOCKERIZACIÓN Y STAGING**
+
+### Prompt a GitHub Copilot:
+> Crea `docker-compose.staging.yml` con:  
+> - FastAPI, PostgreSQL (con particionamiento automático), Redis, Redpanda, Vault dev, Jaeger, Prometheus, Grafana  
+> - Scripts de inicialización: crear topics, esquemas DB, secrets en Vault  
+> - Health checks en todos los servicios  
+> Asegura que el sistema arranque y pase health checks en <60s.
+
+### ✅ Verificación:
+- `docker-compose -f docker-compose.staging.yml up -d` → sistema operativo  
+- `curl http://localhost:8000/health` → `{"status": "healthy"}`  
+- Métricas visibles en `http://localhost:9090`
+
+---
+
+## ✅ **CHECKPOINT FINAL: LISTO PARA STAGING**
+
+El sistema está **listo para pasar a staging** cuando:
+
+1. Todas las fases 0–8 están implementadas y verificadas.
+2. Existe trazabilidad 1:1 entre documentación y código.
+3. Todos los tests pasan en CI (unit, integration, contract, load).
+4. Observabilidad completa está activa y funcional.
+5. No hay secrets hardcoded ni PII en logs.
+6. El sistema cumple SLOs: p95 < 3s, error rate < 1%, uptime ≥ 99.9% en staging.
+7. El presupuesto operativo está monitoreado (aunque no activo aún).
+
+---
+
+## 🔜 PRÓXIMO PASO: AUDITORÍA TÉCNICA AVANZADA
+
+Una vez en staging, se ejecutará la **auditoría exhaustiva** que solicitaste inicialmente, incluyendo:
+
+- Análisis de puntos únicos de fallo  
+- Pruebas de estrés extremo (10k req/min)  
+- Simulación de ataques (replay, IP spoofing)  
+- Validación de consistencia eventual en lead scoring  
+- Revisión de condiciones de carrera en Redis/Kafka  
+- Cumplimiento GDPR/PII  
+
+---
+
+¿Deseas que genere ahora esa **auditoría técnica avanzada**, o prefieres que detalle uno de los prompts anteriores (por ejemplo, el de idempotencia o DLQ) con código completo y tests incluidos?
+
+### USER
+NO ,ME GUSTARIA QUE REGENERES TODO LO QUE HAS GENERADO EN ESTA VDNTANA DE CHAT, UNIFICANDOLO EN UN SOLO MENSAJE, Y ADEMAS AÑADIENDOLE RESPECTO A LA AUDITORIA Y TAMBIEN A LOS PROMPTS, PARA QUE GITHUB COPILOT, REALIZE UNA ADAPTACION INTELIGENTE Y ALINEADA AL PROYECTO REAL ESPECIFICO, YA QUE MUCHAS VECES SUELE OCURRIR QUE AL QUERER EJECUTAR DE FORMA ESTRICTA Y PRECISAMENTE LO QUE SE LE SOLICITA PUEDE QUE NO COINCIDA CON EL PROYECTO REAL, YA SEA POR ALGUNAS DIFERENCIAS MENORES Y POR LO TANTO, NO HACE EFECTO REAL EN EL PROYECTO, DE LA MANERA QUE YO QUIERO EXPRESAR QUE SE INDIQUE ES QUE TENGA LA INTELIGENCIA ADAPTATIVA AL PROYECTO REAL RESPECTO DE LOS PROMPTS..
+
+### ASSISTANT
+Perfecto. A continuación, presento **un único mensaje consolidado, exhaustivo y listo para producción**, que integra:
+
+1. ✅ **El plan de desarrollo estructurado en fases ejecutables**  
+2. ✅ **Prompts inteligentes y adaptativos para GitHub Copilot** (diseñados para alinearse con el proyecto real, no solo con la teoría)  
+3. ✅ **Una auditoría técnica avanzada posterior al desarrollo**, enfocada en robustez, resiliencia, seguridad y eficiencia  
+4. ✅ **Directrices explícitas para que Copilot interprete el contexto real del proyecto** y no genere código genérico o desalineado  
+
+---
+
+# 🧠 **PLAN INTEGRAL DE DESARROLLO + AUDITORÍA TÉCNICA AVANZADA**  
+## **AutoSocial Core v1.0 — Listo para staging → producción**
+
+> **Premisa central**:  
+> GitHub Copilot **no debe ejecutar órdenes literales**, sino **interpretar el contexto real del proyecto** (estructura existente, patrones de código, dependencias reales, convenciones del equipo). Por eso, **cada prompt incluye instrucciones de adaptación contextual inteligente**.
+
+---
+
+## 🔧 **FASE 0: INICIALIZACIÓN DEL PROYECTO (CON ADAPTACIÓN CONTEXTUAL)**
+
+### 📌 Prompt inteligente a GitHub Copilot:
+> Analiza la raíz del proyecto actual. Si ya existe una estructura (`src/`, `pyproject.toml`, etc.), **no la sobrescribas**. En cambio:  
+> - Si falta `src/autosocial/`, créala.  
+> - Si ya existe `pyproject.toml`, **agrega solo las dependencias faltantes**: `fastapi`, `uvicorn[standard]`, `asyncpg`, `aiokafka`, `redis[hiredis]`, `opentelemetry-*`, `python-dotenv`, `pydantic-settings`, `httpx`, `cryptography`, `ipaddress`, `pytest`, `pytest-asyncio`, `pytest-cov`, `bandit`, `locust`.  
+> - Si no existe, genera un `pyproject.toml` limpio con esas dependencias y soporte para instalación editable (`pip install -e .`).  
+> - Asegúrate de que el paquete sea importable como `import autosocial`.
+
+### ✅ Verificación:
+- `pip install -e .` → OK  
+- `python -c "import autosocial"` → OK  
+- No se rompe estructura existente
+
+---
+
+## 🔐 **FASE 1: API DE INGESTA SEGURA DE WEBHOOKS (ADAPTATIVA)**
+
+### 📌 Prompt inteligente a GitHub Copilot:
+> Implementa `POST /webhook/{channel}` en FastAPI **respetando la estructura de módulos existente**. Si ya hay un directorio `webhook/`, usa `webhook/router.py` y `webhook/validator.py`. Si no, créalo.  
+>  
+> Valida en orden:  
+> 1. IP contra whitelist (soporta CIDR y exact match con `ipaddress.IPv4Network`)  
+> 2. Timestamp ≤ 300s  
+> 3. Nonce único (TTL 600s en Redis, clave `nonce:{nonce}`)  
+> 4. HMAC-SHA256 (timing-safe con `secrets.compare_digest`)  
+>  
+> **Importante**:  
+> - Si ya existe un cliente de Redis en el proyecto, **reutilízalo**.  
+> - Si ya hay un esquema de logging, **inyecta `trace_id` y `user_id`** sin romper formato.  
+> - Si hay un middleware de rate limiting, **extiéndelo**; si no, crea uno mínimo con Redis.  
+>  
+> Publica evento `message.received` en Kafka **solo si existe un publisher**; si no, crea `core/events/publisher.py` con `aiokafka`.
+
+### ✅ Verificación:
+- Tests unitarios con pytest (IP no autorizada, HMAC inválido, etc.)  
+- Logs sin payload ni secrets  
+- Rate limiting funcional (10 req/s por IP)
+
+---
+
+## 🧠 **FASE 2: CLASIFICADOR DE INTENTS (CON ADAPTACIÓN A INFRA REAL)**
+
+### 📌 Prompt inteligente a GitHub Copilot:
+> Crea `IntentClassifier` en `services/classification.py`.  
+>  
+> Si ya existe un cliente de Redis o una conexión a Rasa, **usa esos objetos**. Si no, crea clientes mínimos con configuración desde `settings.py` (Pydantic Settings).  
+>  
+> Pipeline:  
+> 1. Regex (para `greet`, `thank_you`)  
+> 2. Cache Redis (`class:{md5(msg)}`, TTL 3600s)  
+> 3. Perfil de usuario (mockeable con `user_service.get_profile(user_id)`)  
+> 4. Llamada a Rasa (`POST /model/parse`)  
+> 5. Fallback si confianza < 0.7  
+>  
+> **Adaptación crítica**:  
+> - Si el proyecto ya usa OpenTelemetry, **inyecta spans** en cada paso.  
+> - Si ya hay métricas en Prometheus, **agrega `classification_latency_ms`** al registro existente.  
+> - Si no, crea un `core/telemetry.py` mínimo.
+
+### ✅ Verificación:
+- F1-score ≥ 0.92 en dataset de prueba  
+- p95 latencia < 500ms  
+- Cache hit-rate > 80%
+
+---
+
+## 📡 **FASE 3: EVENT-DRIVEN IDOMPOTENTE (CON CONCIENCIA DE ESTADO REAL)**
+
+### 📌 Prompt inteligente a GitHub Copilot:
+> Implementa `EventPublisher` y `IdempotentConsumer` en `core/events/`.  
+>  
+> **Reglas de adaptación**:  
+> - Si ya hay un `EventBus` abstracto, **extiéndelo**.  
+> - Si Kafka no está disponible en el entorno local, **permite fallback a Redis Streams** (configurable vía `EVENT_BACKEND=kafka|redis`).  
+> - Usa `redis.set("evt:{event_id}", "1", ex=172800, nx=True)` para idempotencia.  
+> - Si ya hay un DLQ, **reutiliza su lógica**; si no, crea `dlq/{topic}`.  
+> - Maneja SIGTERM con `asyncio.Event()` para shutdown limpio.
+
+### ✅ Verificación:
+- Zero message loss en reinicio forzado  
+- DLQ visible y procesable  
+- Trazas end-to-end en Jaeger
+
+---
+
+## ⏳ **FASE 4–8: DELEGACIÓN, SECRETS, OBSERVABILIDAD, TESTING, DOCKER**
+
+> **Patrón común para todos los prompts**:  
+>  
+> “Implementa [componente] en [ruta], **respetando la arquitectura existente**. Si ya hay:  
+> - un cliente de [servicio], **reutilízalo**  
+> - un esquema de logs/métricas/trazas, **integra con él**  
+> - una convención de nombres o patrones (ej. `core/`, `services/`, `adapters/`), **sigue esa convención**  
+>  
+> Si no existe, crea una implementación mínima, limpia y testeable, **pero deja hooks para reemplazo futuro** (ej. interfaces abstractas, settings configurables).”
+
+---
+
+## ✅ **CHECKPOINT: SISTEMA LISTO PARA STAGING**
+
+El sistema está listo cuando:
+- Todas las fases están implementadas **sin romper la coherencia del proyecto real**  
+- Tests pasan en CI  
+- Observabilidad activa  
+- No hay secrets ni PII en logs  
+- SLOs cumplidos en carga simulada
+
+---
+
+## 🔍 **AUDITORÍA TÉCNICA AVANZADA (POST-DESARROLLO)**
+
+Ahora sí, con el sistema en staging, se ejecuta una **auditoría profunda**:
+
+### 1. **Análisis de fragilidades**
+- ¿Hay condiciones de carrera en Redis? (ej. `GET + SET` sin `NX`)  
+- ¿Se usa `request_id` en todos los flujos para idempotencia?  
+- ¿Los DLQs tienen alertas y runbooks?
+
+### 2. **Pruebas de estrés extremo**
+- Simular 10k req/min → ¿se mantiene p95 < 3s?  
+- Inyectar latencia en Rasa → ¿activa fallback y circuit breaker?
+
+### 3. **Seguridad avanzada**
+- ¿Logs sanitizan PII?  
+- ¿Vault usa mTLS y least privilege?  
+- ¿IP whitelist soporta IPv6 y CIDR complejos?
+
+### 4. **Consistencia eventual**
+- ¿El lead scoring se actualiza correctamente si hay retraso en eventos?  
+- ¿La caché de intents se invalida al cambiar perfil de usuario?
+
+### 5. **Costo y eficiencia**
+- ¿Se respeta presupuesto de $25/mes?  
+- ¿Se usan fallbacks económicos cuando es necesario?
+
+### 6. **Resiliencia operativa**
+- ¿El DR plan funciona en <30 min?  
+- ¿Los backups son restaurables?
+
+---
+
+## 🧩 **DIRECTRIZ FINAL PARA GITHUB COPILOT**
+
+> **No eres un generador de código genérico. Eres un ingeniero que entiende el contexto real del proyecto.**  
+>  
+> Antes de generar código:  
+> 1. **Explora la estructura actual** (`src/`, `tests/`, `pyproject.toml`)  
+> 2. **Identifica patrones existentes** (nombres de módulos, estilos, clientes reutilizables)  
+> 3. **Extiende, no reemplaces**  
+> 4. **Deja el sistema más coherente, no más fragmentado**  
+> 5. **Si hay ambigüedad, pregunta o usa una interfaz abstracta**  
+
+---
+
+## ✅ **CONCLUSIÓN**
+
+Este plan garantiza que:
+- El desarrollo **se alinea con el proyecto real**, no con una abstracción ideal  
+- GitHub Copilot actúa con **inteligencia contextual**, no con ceguera literal  
+- La auditoría posterior **detecta riesgos reales**, no solo teóricos  
+- El sistema resultante es **robusto, seguro, observable y sostenible**
+
+**Documento final**: listo para ejecutar fase de desarrollo → staging → auditoría → producción.
