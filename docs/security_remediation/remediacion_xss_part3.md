@@ -1,0 +1,25 @@
+Tabla 3. Detalle por instancia
+
+| Instancia | Endpoint                     | Ubicación (línea) | Campo reflejado                   | Tipo de XSS        | Payload típico                                 | Evidencia en código                                  | Severidad | Propuesta de corrección                                                       | Prioridad |
+|-----------|------------------------------|-------------------|-----------------------------------|--------------------|-------------------------------------------------|------------------------------------------------------|-----------|-------------------------------------------------------------------------------|----------|
+| 1         | /api/whatsapp/test (POST)    | 416               | received_message                  | Reflected          | <script>alert('XSS')</script>                  | send_json_response(...) incluye message_received crudo | Alta      | json.dumps + escape HTML (quote=True)                                         | P0       |
+| 2         | /api/whatsapp/test (POST)    | 416               | user_id                           | Reflected          | "><img src=x onerror=alert('XSS')>             | send_json_response(...) incluye user_id crudo          | Alta      | json.dumps + escape HTML (quote=True)                                         | P0       |
+| 3         | /api/nlp/classify (POST)     | 448               | original_message                  | Reflected          | <svg onload=alert('XSS')>                      | send_json_response(...) incluye original_message       | Alta      | json.dumps + escape HTML (quote=True)                                         | P0       |
+| 4         | /api/instagram/like (POST)   | 483               | username                          | Reflected          | javascript:alert('XSS')                        | send_json_response(...) incluye username               | Alta      | Validación alfanumérico + escape respuesta + validación en manager           | P0       |
+| 5         | /api/instagram/follow (POST) | 509               | username                          | Reflected          | " onfocus=alert('XSS') x="                     | send_json_response(...) incluye username               | Alta      | Validación alfanumérico + escape respuesta                                    | P0       |
+| 6         | /api/instagram/dm (POST)     | 532               | username, message                 | Reflected          | <img src=x onerror=alert('XSS')>               | send_json_response(...) incluye username y message     | Alta      | Validación alfanumérico + escape HTML (quote=True)                            | P0       |
+| 7         | /api/e2e/whatsapp-flow (POST)| 688               | original_message                  | Reflected          | <script>alert('XSS')</script>                  | send_json_response(...) incluye original_message       | Alta      | json.dumps + escape HTML (quote=True)                                         | P0       |
+
+### Instancias de XSS reflected (7 confirmadas en código)
+
+Las siete instancias listadas arriba pertenecen a esta categoría. Todas comparten el mismo patrón: recepción de datos del cliente y reenvío en el cuerpo de la respuesta JSON sin escapado, lo que permite al navegador interpretar contenido malicioso cuando el frontend inserta dichos valores en el DOM con métodos inseguros.
+
+### XSS event-handler y DOM-XSS (evidencia en dashboard)
+
+El dashboard integra las respuestas JSON de la API y las renderiza mediante innerHTML, además de utilizar textContent. Esta mezcla es problemática: los datos provenientes de endpoints vulnerables se convierten en candidatos para manipulación de atributos y event handlers si se insertan con innerHTML. La ausencia de CSP y headers de seguridad elimina barreras adicionales que podrían bloquear inline scripts y handlers, potenciando la ejecución de payloads como <img src=x onerror=...>, <svg onload=...> o protocolos javascript: en atributos href/src.[^2]
+
+## Revisión de manejo de entradas del usuario
+
+La revisión de entradas por endpoint evidencia falta de validación y escapado en campos como message, username y user_id. El servidor realiza json.loads y obtiene los valores con get(), pero no aplica sanitización posterior antes de incluirlos en respuestas JSON. Este patrón es consistente con la exposición descrita en la auditoría para las rutas POST /api/whatsapp/test, POST /api/nlp/classify, POST /api/instagram/like, POST /api/instagram/follow, POST /api/instagram/dm y POST /api/e2e/whatsapp-flow.[^2]
+
+Como referencia, el módulo SecurityValidator demuestra cómo deben treatse las entradas sensibles (validación de username alfanumérico con longitud acotada y detección de patrones maliciosos como <script o event-handlers, y escape HTML con quote=True). La adopción de estos controles en el servidor corregirá la vulnerabilidad de raíz.
